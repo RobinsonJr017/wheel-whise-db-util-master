@@ -59,7 +59,7 @@ export async function scrap(motosPath: string) {
                 for (let i = 0; i < maxRetries; i++) {
                     try {
                         fileStream.on("open", () => {
-                            https.get(url, (response) => {
+                            https.get(url.replaceAll("\r\n", ""), (response) => {
                                 total = parseInt(response.headers['content-length'] || "0", 10);
                                 console.log(`Starting download of ${url}`);
                                 response.on('data', (chunk) => {
