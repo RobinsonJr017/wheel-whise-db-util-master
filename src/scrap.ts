@@ -30,7 +30,7 @@ export async function scrap(motosPath: string) {
   }
 
   const db: Moto[] = JSON.parse(
-    (await readFile(path.join(process.cwd(), motosPath))).toString()
+    (await readFile(path.join(process.cwd(), motosPath))).toString().replaceAll("–", "-")
   );
 
   const photos = db.map((moto) => {
