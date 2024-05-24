@@ -1,8 +1,8 @@
-import { mkdir, readFile, stat, writeFile } from "fs/promises";
-import path from "path";
-import { Moto } from "./types/Moto.js";
-import { createWriteStream } from "fs";
-import * as https from "https";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import path from "node:path";
+import type { Moto } from "./types/Moto.js";
+import { createWriteStream } from "node:fs";
+import * as https from "node:https";
 import { IMAGES_BASE_URL } from "./constants.js";
 import { nanoid } from "nanoid";
 
@@ -30,71 +30,64 @@ export async function scrap(motosPath: string) {
   }
 
   const db: Moto[] = JSON.parse(
-    (await readFile(path.join(process.cwd(), motosPath))).toString().replaceAll("–", "-")
+    (await (await readFile(path.join(process.cwd(), motosPath))).toString()).replaceAll("–", "-")
   );
 
   const photos = db.map((moto) => {
     return {
-      url_img_header: moto.url_img_header,
-      url_foto: moto.url_foto,
-      motos_colores: moto.MotosColores.map((moto_color) => {
-        return {
-          url_foto_color_peque: moto_color.url_foto_color_peque,
-          url_foto_color_grande: moto_color.url_foto_color_grande,
-        };
-      }),
+      url_foto: { photo: moto.url_foto, id: moto.id}
     };
   });
 
   async function downloadPhotos(
+    // biome-ignore lint/suspicious/noExplicitAny: <explanation>
     photos: any[],
     folder: string,
     maxRetries = 3,
     delay = 1000
   ) {
-    const promises = photos.map((photo) => {
-      return new Promise<void>(async (resolve, reject) => {
+    for (const photo of photos) {
+      // biome-ignore lint/suspicious/noAsyncPromiseExecutor: <explanation>
+      await new Promise<void>(async (resolve, reject) => {
         const url =
-          IMAGES_BASE_URL +
-          (photo.url_img_header ||
-            photo.url_foto ||
-            photo.url_foto_color_peque ||
-            photo.url_foto_color_grande);
-        const filename = url.replaceAll("\r\n", "").split("/").pop();
-        const file = path.join(
-          process.cwd(),
-          "images",
-          folder,
-          filename || nanoid()
-        );
-        const fileStream = createWriteStream(file);
-        let downloaded = 0;
-        let total = 0;
-
-        for (let i = 0; i < maxRetries; i++) {
-          try {
-            fileStream.on("open", () => {
-              function downloadWithRetry(url: string, retries: number = 5) {
-                const request = https.get(
-                  url.replaceAll("\r\n", ""),
-                  (response) => {
-                    let total = parseInt(
-                      response.headers["content-length"] || "0",
-                      10
-                    );
-                    let downloaded = 0;
-                    console.log(`Starting download of ${url}`);
-                    response.on("data", (chunk) => {
-                      downloaded += chunk.length;
-                      const percentage = ((downloaded / total) * 100).toFixed(
-                        2
+        IMAGES_BASE_URL +
+        (photo.url_img_header ||
+          photo.url_foto.photo ||
+          photo.url_foto_color_peque ||
+          photo.url_foto_color_grande);
+          const filename = url.replaceAll("\r\n", "").split("/").pop();
+          const file = path.join(
+            process.cwd(),
+            "images",
+            folder,
+            `${photo.url_foto.id}.png` || filename || nanoid()
+          );
+          const fileStream = createWriteStream(file);
+          
+          for (let i = 0; i < maxRetries; i++) {
+            try {
+              fileStream.on("open", () => {
+                function downloadWithRetry(url: string, retries = 5) {
+                  const request = https.get(
+                    url.replaceAll("\r\n", ""),
+                    (response) => {
+                      const total = Number.parseInt(
+                        response.headers["content-length"] || "0",
+                        10
                       );
-                      process.stdout.write(
-                        `\rDownload progress: ${percentage}%`
-                      );
-                    });
-                    response.pipe(fileStream);
-                  }
+                      let downloaded = 0;
+                      console.log(`Starting download of ${url}`);
+                      response.on("data", (chunk) => {
+                        downloaded += chunk.length;
+                        const percentage = ((downloaded / total) * 100).toFixed(
+                          2
+                        );
+                        process.stdout.write(
+                          `\rDownload progress: ${percentage}%`
+                        );
+                      });
+                      response.pipe(fileStream);
+                    }
                 );
 
                 request.on("error", (err: any) => {
@@ -111,7 +104,7 @@ export async function scrap(motosPath: string) {
                     // Handle other errors
                   }
                 });
-
+                
                 fileStream.on("finish", () => {
                   console.log(`\nFinished download of ${url}`);
                 });
@@ -141,15 +134,12 @@ export async function scrap(motosPath: string) {
           }
         }
       });
-    });
-    return Promise.all(promises);
+    }
   }
-
+  
   for (const photo of photos) {
     try {
-      await downloadPhotos([photo], "url_img_header");
-      await downloadPhotos([photo], "url_foto");
-      await downloadPhotos(photo.motos_colores, "motos_colores");
+      await downloadPhotos([photo], "url_foto")
     } catch (error) {
       console.log("Error downloading photos", error);
     }
@@ -201,3 +191,5 @@ export async function scrap(motosPath: string) {
     "Finished downloading photos and saved the updated database to 'motos-scraped.json'"
   );
 }
+
+await scrap("motos.json");
